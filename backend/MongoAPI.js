@@ -3,12 +3,16 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const morgan = require('morgan');
 const dotenv = require('dotenv');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 var fs = require("fs");
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const SECRET_KEY = process.env.SECRET_KEY;
 
 app.use(bodyParser.json());
 app.use(cors());
@@ -24,6 +28,46 @@ const db = client.db(dbName);
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+
+function getSecretKey(){
+    const secretKey = crypto.randomBytes(64).toString('hex');
+    return secretKey;
+}
+
+app.post('/register', async(req, res) => {
+    const { username, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await addStep('users', { username, hashedPassword }, res);
+    res.status(201).send('User registered');
+});
+
+app.post('/login', async(req, res) => {
+    const { username, password } = req.body;
+    const user = await db.collection("users").findOne({"username":username});
+    if(user && await bcrypt.compare(password, user.hashedPassword)){
+        const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: '1h' });
+
+        res.json({ token });
+    }else{
+        res.status(401).send("Invalid credentials");
+    }
+});
+
+const authenticateToken = (req, res, next) => {
+    const token = req.headers['authorization'];
+    if(!token) return res.sendStatus(403);
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if(err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+};
+
+app.get('/protectedPath', authenticateToken, (req, res) => {
+    res.status(200).send({"message":`Welcome ${req.user.username}!`});
+})
+
+// MONGO HOOKS
 
 app.get('/api', (req, res) => {
     res.json({ message: 'Hello there' });
@@ -110,17 +154,22 @@ app.post('/createCollection', async(req, res) => {
 app.post('/addToCollection/:collectionName', async(req, res) => {
     const collectionName = req.params.collectionName;
     const newData = req.body;
+    await addStep(collectionName, newData, res);
+    res.status(200).send({status:"success"});
+});
+
+async function addStep(collectionName, data, res){
     try{
-        const result = await db.collection(collectionName).insertOne(newData);
+        const result = await db.collection(collectionName).insertOne(data);
         if(!result){
             return res.status(404).json({error: "could not add to collection."});
         }
-        return res.status(200).send({status:"success"});
+        //res.status(200).send({status:"success"});
     }catch(err){
         console.error('Error adding to Collection:', err);
         res.status(500).json({error: 'Internal Server Error.'});
     }
-});
+}
 
 app.post('/addManyToCollection/:collectionName', async(req, res) => {
     const collectionName = req.params.collectionName;
