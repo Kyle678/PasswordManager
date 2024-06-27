@@ -1,12 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 
+const baseURL = 'http://localhost:5000/';
+const loginURL = baseURL + 'login';
+const logoutURL = baseURL + 'logout';
+const registerURL = baseURL + 'register';
+const protectedURL = baseURL + 'protectedPath';
+
 function App() {
   const [token, setToken] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState('');
   const [stayLoggedIn, setStayLoggedIn] = useState(false);
+
+  async function sendGET(url){
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': token
+      }
+    });
+    return response;
+  }
+
+  async function sendPOST(url, body){
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: body
+    });
+    return response
+  }
 
   const setCookie = (name, value, days) => {
     let expires = "";
@@ -33,60 +60,47 @@ function App() {
     async function attemptAutoLogin() {
       const t = getCookie("token");
       if(!t){return;}
-      console.log("token: ", t);
       setToken(t);
       setStatus("Automatically logged in.");
     }
     attemptAutoLogin();
   }, []);
 
-  const register = async() => {
+  async function register() {
     try{
-      const response = await fetch('http://localhost:5000/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      const response = await sendPOST(
+        registerURL,
+        JSON.stringify({
           username: username,
           password: password
         })
-      });
+      );
+      const data = response.json();
+      setStatus(data.message);
       if(response.ok){
-        const data = await response.json();
-        setStatus(data.message);
         setToken(data.token);
         setCookie("token", data.token, 7);
-      }else{
-        const data = await response.json();
-        setStatus(data.message);
       }
     }catch(err){
       console.error('Login faled', err);
     }
   }
 
-  const login = async() => {
+  async function login() {
     try{
-      const response = await fetch('http://localhost:5000/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      const response = await sendPOST(
+        loginURL,
+        JSON.stringify({
           username: username,
           password: password,
           stayLoggedIn: stayLoggedIn
         })
-      });
+      );
+      const data = await response.json();
+      setStatus(data.message);
       if(response.ok){
-        const data = await response.json();
-        setStatus(data.message);
         setToken(data.token);
         setCookie("token", data.token, 7);
-      }else{
-        const data = await response.json();
-        setStatus(data.message);
       }
     }catch(err){
       console.error('Login faled', err);
@@ -97,14 +111,9 @@ function App() {
     document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
   }
 
-  const logout = async() => {
+  async function logout() {
     try{
-      const response = await fetch('http://localhost:5000/logout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await sendPOST(logoutURL, {});
       if(response.ok){
         const data = await response.json();
         setStatus(data.message);
@@ -120,22 +129,11 @@ function App() {
     setStayLoggedIn(!stayLoggedIn);
   }
 
-  const protectedPath = async() => {
+  async function protectedPath() {
     try{
-      const response = await fetch('http://localhost:5000/protectedPath', {
-        method: 'GET',
-        headers: {
-          'Authorization': token
-        }
-      });
-      if(response.ok){
-        const data = await response.json();
-        setStatus(data.message);
-      }else{
-        const data = await response.json();
-        setStatus(data.message);
-        console.error('Access denied');
-      }
+      const response = await sendGET(protectedURL);
+      const data = await response.json();
+      setStatus(data.message);
     }catch(err){
       console.error('An error occurred', err);
     }
