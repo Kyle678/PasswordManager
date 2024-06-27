@@ -25,6 +25,21 @@ const dbName = "PasswordManagerApp";
 const client = new MongoClient(url);
 const db = client.db(dbName);
 
+const status_messages = {
+    "await":"Awaiting log in",
+    "loggedin":"Logged In Successfully",
+    "invalid":"Invalid Credentials",
+    "loggedout":"Logged Out Successfully",
+    "registered":"Registered Successfully",
+    "exists":"Username Already Exists",
+    "protected":"Accessed Protected Path",
+    "protecteddenied":"Access to Protected Path Denied"
+}
+
+function getMessage(key){
+    return {"message":status_messages[key]}
+}
+
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
@@ -36,42 +51,55 @@ function getSecretKey(){
 
 app.post('/register', async(req, res) => {
     const { username, password } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await addStep('users', { username, hashedPassword }, res);
-    res.status(201).send('User registered');
-});
-
-app.post('/login', async(req, res) => {
-    const { username, password } = req.body;
-    const user = await db.collection("users").findOne({"username":username});
-    if(user && await bcrypt.compare(password, user.hashedPassword)){
-        const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: '1h' });
-
-        res.json({ token });
+    const existing = await db.collection('users').findOne({username:username});
+    console.log(existing);
+    if(existing){
+        res.status(400).send(getMessage('exists'));
     }else{
-        res.status(401).send("Invalid credentials");
+        const hashedPassword = await bcrypt.hash(password, 10);
+        console.log(password);
+        console.log(hashedPassword);
+        await addToCollectionFunction('users', { username, hashedPassword }, res);
+        res.status(201).send(getMessage('registered'));
     }
 });
 
+app.post('/login', async(req, res) => {
+    const { username, password, stayLoggedIn } = req.body;
+    const user = await db.collection("users").findOne({"username":username});
+    if(user && await bcrypt.compare(password, user.hashedPassword)){
+        let token;
+        if(stayLoggedIn){
+            token = jwt.sign({ username }, SECRET_KEY, { expiresIn: '1h' });
+        }else{
+            token = jwt.sign({ username }, SECRET_KEY);
+        }
+        res.status(200).send({token: token, message: status_messages['loggedin']})
+    }else{
+        res.status(401).send(getMessage('invalid'));
+    }
+});
+
+app.post('/logout', async(req, res) => {
+    res.status(200).send(getMessage('loggedout'));
+})
+
 const authenticateToken = (req, res, next) => {
     const token = req.headers['authorization'];
-    if(!token) return res.sendStatus(403);
+    if(!token) return res.status(403).send(getMessage('protecteddenied'))
     jwt.verify(token, SECRET_KEY, (err, user) => {
         if(err) return res.sendStatus(403);
         req.user = user;
+        console.log('token:',token);
         next();
     });
 };
 
 app.get('/protectedPath', authenticateToken, (req, res) => {
-    res.status(200).send({"message":`Welcome ${req.user.username}!`});
+    res.status(200).send(getMessage('protected'));
 })
 
 // MONGO HOOKS
-
-app.get('/api', (req, res) => {
-    res.json({ message: 'Hello there' });
-});
 
 app.get("/getCollections", async (req, res) => {
     try {
@@ -154,11 +182,11 @@ app.post('/createCollection', async(req, res) => {
 app.post('/addToCollection/:collectionName', async(req, res) => {
     const collectionName = req.params.collectionName;
     const newData = req.body;
-    await addStep(collectionName, newData, res);
+    await addToCollectionFunction(collectionName, newData, res);
     res.status(200).send({status:"success"});
 });
 
-async function addStep(collectionName, data, res){
+async function addToCollectionFunction(collectionName, data, res){
     try{
         const result = await db.collection(collectionName).insertOne(data);
         if(!result){

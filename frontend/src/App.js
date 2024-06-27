@@ -5,8 +5,8 @@ function App() {
   const [token, setToken] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [status, setStatus] = useState('');
+  const [stayLoggedIn, setStayLoggedIn] = useState(false);
 
   const setCookie = (name, value, days) => {
     let expires = "";
@@ -54,14 +54,14 @@ function App() {
       });
       if(response.ok){
         const data = await response.json();
+        setStatus(data.message);
         setToken(data.token);
         setCookie("token", data.token, 7);
-        setError('');
       }else{
-        setError('Invalid credentials');
+        const data = await response.json();
+        setStatus(data.message);
       }
     }catch(err){
-      setError('An error occurred');
       console.error('Login faled', err);
     }
   }
@@ -75,25 +75,52 @@ function App() {
         },
         body: JSON.stringify({
           username: username,
-          password: password
+          password: password,
+          stayLoggedIn: stayLoggedIn
         })
       });
       if(response.ok){
         const data = await response.json();
+        setStatus(data.message);
         setToken(data.token);
         setCookie("token", data.token, 7);
-        setError('');
       }else{
-        setError('Invalid credentials');
+        const data = await response.json();
+        setStatus(data.message);
       }
     }catch(err){
-      setError('An error occurred');
       console.error('Login faled', err);
     }
   }
 
+  function deleteCookie(name) {
+    document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+  }
+
+  const logout = async() => {
+    try{
+      const response = await fetch('http://localhost:5000/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      if(response.ok){
+        const data = await response.json();
+        setStatus(data.message);
+        deleteCookie("token");
+        setToken('');
+      }
+    }catch(err){
+      console.error('Logout failed');
+    }
+  }
+
+  const handleCheckboxChange = async() => {
+    setStayLoggedIn(!stayLoggedIn);
+  }
+
   const protectedPath = async() => {
-    console.log("using token",token);
     try{
       const response = await fetch('http://localhost:5000/protectedPath', {
         method: 'GET',
@@ -103,8 +130,10 @@ function App() {
       });
       if(response.ok){
         const data = await response.json();
-        console.log(data);
+        setStatus(data.message);
       }else{
+        const data = await response.json();
+        setStatus(data.message);
         console.error('Access denied');
       }
     }catch(err){
@@ -129,9 +158,16 @@ function App() {
         />
         <button onClick={register}>Register</button>
         <button onClick={login}>Login</button>
-        <button onClick={protectedPath}>protected</button>
-        {error && <p>{error}</p>}
-        {!error && <p>{status}</p>}
+        <button onClick={logout}>Logout</button>
+        <button onClick={protectedPath}>Protected</button>
+        <input 
+          type="checkbox"
+          checked={stayLoggedIn}
+          onChange={handleCheckboxChange}
+        />
+        <label >Stay Logged In</label>
+        <br />
+        {status}
       </div>
     </div>
   );
